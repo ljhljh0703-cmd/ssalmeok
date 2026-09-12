@@ -20,6 +20,9 @@ use tauri_plugin_shell::ShellExt;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, Lines};
 use uuid::Uuid;
 
+#[cfg(target_os = "macos")]
+use objc2_foundation::NSString;
+
 const CODEXBAR_VERSION: &str = "0.59.0";
 const REFRESH_INTERVAL_SECONDS: u64 = 60;
 const COST_REFRESH_INTERVAL_SECONDS: u64 = 10 * 60;
@@ -1496,7 +1499,10 @@ fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     tray.with_inner_tray_icon(|inner| {
         if let Some(status_item) = inner.ns_status_item() {
+            let autosave_name = NSString::from_str("com.godju.ssalmeok.usage-tray");
+            status_item.setAutosaveName(Some(&autosave_name));
             status_item.setLength(MACOS_TRAY_ITEM_WIDTH);
+            status_item.setVisible(true);
         }
     })?;
 
