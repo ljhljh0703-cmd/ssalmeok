@@ -26,7 +26,7 @@ use objc2_foundation::{NSString, NSUserDefaults};
 const CODEXBAR_VERSION: &str = "0.59.0";
 const REFRESH_INTERVAL_SECONDS: u64 = 60;
 const COST_REFRESH_INTERVAL_SECONDS: u64 = 10 * 60;
-const MACOS_TRAY_ITEM_WIDTH: f64 = 50.0;
+const MACOS_TRAY_ITEM_WIDTH: f64 = 24.0;
 const MACOS_TRAY_AUTOSAVE_NAME: &str = "usage-tray";
 const MACOS_TRAY_INITIAL_POSITION: isize = 500;
 const STALE_AFTER_SECONDS: u64 = 180;
@@ -829,13 +829,6 @@ fn min_remaining(provider: &ProviderSnapshot) -> Option<f64> {
         .reduce(f64::min)
 }
 
-fn tray_title(provider: Option<&ProviderSnapshot>) -> String {
-    match provider.and_then(min_remaining) {
-        Some(value) => format!("{:.0}", value),
-        None => "--".to_string(),
-    }
-}
-
 fn format_integer(value: u64) -> String {
     let digits = value.to_string();
     let mut formatted = String::with_capacity(digits.len() + digits.len() / 3);
@@ -1067,7 +1060,6 @@ fn update_trays(app: &AppHandle, snapshot: &AppSnapshot) {
     };
 
     let _ = tray.set_icon_with_as_template(Some(icon), false);
-    let _ = tray.set_title(Some(tray_title(selected)));
     let _ = tray.set_tooltip(Some(tooltip));
     if let Ok(menu) = build_combined_tray_menu(app, Some(snapshot)) {
         let _ = tray.set_menu(Some(menu));
@@ -1498,7 +1490,6 @@ fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
     let tray = TrayIconBuilder::with_id("usage-tray")
         .icon(tauri::include_image!("./icons/tray-codex.png"))
         .icon_as_template(false)
-        .title("--")
         .tooltip("Codex · Claude 남은 사용량을 읽는 중")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -1674,7 +1665,7 @@ mod tests {
     }
 
     #[test]
-    fn menu_title_uses_least_remaining_window() {
+    fn representative_value_uses_least_remaining_window() {
         let mut provider = ProviderSnapshot::empty("codex");
         provider.windows = vec![
             UsageWindow {
@@ -1694,7 +1685,7 @@ mod tests {
                 window_minutes: Some(10_080),
             },
         ];
-        assert_eq!(tray_title(Some(&provider)), "31");
+        assert_eq!(min_remaining(&provider), Some(31.0));
     }
 
     #[test]
