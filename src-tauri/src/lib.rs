@@ -1482,7 +1482,7 @@ fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
             tauri::include_image!("./icons/tray-claude.png")
         };
         let menu = build_provider_tray_menu(app.handle(), provider_id, None, None)?;
-        TrayIconBuilder::with_id(tray_id)
+        let tray = TrayIconBuilder::with_id(tray_id)
             .icon(icon)
             .icon_as_template(false)
             .title("--%")
@@ -1500,6 +1500,13 @@ fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
                 }
             })
             .build(app)?;
+
+        #[cfg(target_os = "macos")]
+        tray.with_inner_tray_icon(|inner| {
+            if let Some(status_item) = inner.ns_status_item() {
+                status_item.setVisible(true);
+            }
+        })?;
     }
     app.on_menu_event(|app, event| match event.id().as_ref() {
         "codex-open" | "claude-open" => show_main_window(app),
@@ -1527,9 +1534,6 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-
             let cached_snapshot = load_cached_snapshot(app.handle());
             if let Some(cached) = cached_snapshot.as_ref()
                 && let Ok(mut snapshot) = app.state::<RuntimeState>().snapshot.lock()
