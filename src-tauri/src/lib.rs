@@ -23,6 +23,7 @@ use uuid::Uuid;
 const CODEXBAR_VERSION: &str = "0.59.0";
 const REFRESH_INTERVAL_SECONDS: u64 = 60;
 const COST_REFRESH_INTERVAL_SECONDS: u64 = 10 * 60;
+const MACOS_TRAY_ITEM_WIDTH: f64 = 48.0;
 const STALE_AFTER_SECONDS: u64 = 180;
 const RESET_CONFIRMATION: &str = "RESET_ONE_CREDIT";
 const EXCHANGE_RATE_CACHE_SECONDS: u64 = 6 * 60 * 60;
@@ -825,8 +826,8 @@ fn min_remaining(provider: &ProviderSnapshot) -> Option<f64> {
 
 fn tray_title(provider: Option<&ProviderSnapshot>) -> String {
     match provider.and_then(min_remaining) {
-        Some(value) => format!("{:.0}%", value),
-        None => "--%".to_string(),
+        Some(value) => format!("{:.0}", value),
+        None => "--".to_string(),
     }
 }
 
@@ -1485,7 +1486,7 @@ fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
         let tray = TrayIconBuilder::with_id(tray_id)
             .icon(icon)
             .icon_as_template(false)
-            .title("--%")
+            .title("--")
             .tooltip(tooltip)
             .menu(&menu)
             .show_menu_on_left_click(false)
@@ -1504,6 +1505,7 @@ fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
         #[cfg(target_os = "macos")]
         tray.with_inner_tray_icon(|inner| {
             if let Some(status_item) = inner.ns_status_item() {
+                status_item.setLength(MACOS_TRAY_ITEM_WIDTH);
                 status_item.setVisible(true);
             }
         })?;
@@ -1534,6 +1536,9 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
             let cached_snapshot = load_cached_snapshot(app.handle());
             if let Some(cached) = cached_snapshot.as_ref()
                 && let Ok(mut snapshot) = app.state::<RuntimeState>().snapshot.lock()
@@ -1663,7 +1668,7 @@ mod tests {
                 window_minutes: Some(10_080),
             },
         ];
-        assert_eq!(tray_title(Some(&provider)), "31%");
+        assert_eq!(tray_title(Some(&provider)), "31");
     }
 
     #[test]
