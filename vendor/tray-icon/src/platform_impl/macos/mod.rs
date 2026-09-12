@@ -60,6 +60,7 @@ impl TrayIcon {
         // tauri-apps/tray-icon#317; this app always supplies a stable tray ID.
         unsafe {
             ns_status_item.setAutosaveName(Some(&NSString::from_str(&id.0)));
+            ns_status_item.setVisible(true);
         }
 
         set_icon_for_ns_status_item_button(
