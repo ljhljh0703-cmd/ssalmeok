@@ -1535,6 +1535,19 @@ fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn restore_native_tray_position(app: &AppHandle) {
+    if let Some(tray) = app.tray_by_id("usage-tray") {
+        let _ = tray.with_inner_tray_icon(|inner| {
+            if let Some(status_item) = inner.ns_status_item() {
+                status_item.setVisible(false);
+                status_item.setVisible(true);
+                status_item.setLength(MACOS_TRAY_ITEM_WIDTH);
+            }
+        });
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1595,13 +1608,15 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("쌀먹을 실행하지 못했습니다.")
-        .run(|_, event| {
-            if let tauri::RunEvent::ExitRequested {
+        .run(|app, event| match event {
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Ready => restore_native_tray_position(app),
+            tauri::RunEvent::ExitRequested {
                 code: None, api, ..
-            } = event
-            {
+            } => {
                 api.prevent_exit();
             }
+            _ => {}
         });
 }
 
