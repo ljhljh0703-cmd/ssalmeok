@@ -21,12 +21,14 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufR
 use uuid::Uuid;
 
 #[cfg(target_os = "macos")]
-use objc2_foundation::NSString;
+use objc2_foundation::{NSString, NSUserDefaults};
 
 const CODEXBAR_VERSION: &str = "0.59.0";
 const REFRESH_INTERVAL_SECONDS: u64 = 60;
 const COST_REFRESH_INTERVAL_SECONDS: u64 = 10 * 60;
 const MACOS_TRAY_ITEM_WIDTH: f64 = 50.0;
+const MACOS_TRAY_AUTOSAVE_NAME: &str = "com.godju.ssalmeok.usage-tray";
+const MACOS_TRAY_INITIAL_POSITION: isize = 650;
 const STALE_AFTER_SECONDS: u64 = 180;
 const RESET_CONFIRMATION: &str = "RESET_ONE_CREDIT";
 const EXCHANGE_RATE_CACHE_SECONDS: u64 = 6 * 60 * 60;
@@ -1499,10 +1501,21 @@ fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     tray.with_inner_tray_icon(|inner| {
         if let Some(status_item) = inner.ns_status_item() {
-            let autosave_name = NSString::from_str("com.godju.ssalmeok.usage-tray");
+            let autosave_name = NSString::from_str(MACOS_TRAY_AUTOSAVE_NAME);
+            let position_key = NSString::from_str(&format!(
+                "NSStatusItem Preferred Position {MACOS_TRAY_AUTOSAVE_NAME}"
+            ));
+            let visibility_key =
+                NSString::from_str(&format!("NSStatusItem Visible {MACOS_TRAY_AUTOSAVE_NAME}"));
+            let defaults = NSUserDefaults::standardUserDefaults();
+            if defaults.objectForKey(&position_key).is_none() {
+                defaults.setInteger_forKey(MACOS_TRAY_INITIAL_POSITION, &position_key);
+            }
+            if defaults.objectForKey(&visibility_key).is_none() {
+                defaults.setBool_forKey(true, &visibility_key);
+            }
             status_item.setAutosaveName(Some(&autosave_name));
             status_item.setLength(MACOS_TRAY_ITEM_WIDTH);
-            status_item.setVisible(true);
         }
     })?;
 
