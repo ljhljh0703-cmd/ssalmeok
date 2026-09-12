@@ -1497,7 +1497,6 @@ fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
     tray.with_inner_tray_icon(|inner| {
         if let Some(status_item) = inner.ns_status_item() {
             status_item.setLength(MACOS_TRAY_ITEM_WIDTH);
-            status_item.setVisible(true);
         }
     })?;
 
