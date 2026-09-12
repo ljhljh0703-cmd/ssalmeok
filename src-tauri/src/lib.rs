@@ -1682,8 +1682,10 @@ mod tests {
             resets_at: None,
             window_minutes: Some(300),
         }];
-        let mut snapshot = AppSnapshot::default();
-        snapshot.providers = vec![codex, claude];
+        let snapshot = AppSnapshot {
+            providers: vec![codex, claude],
+            ..AppSnapshot::default()
+        };
 
         assert_eq!(most_constrained_provider(&snapshot).unwrap().id, "claude");
     }
