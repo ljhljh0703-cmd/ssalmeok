@@ -27,7 +27,7 @@ const CODEXBAR_VERSION: &str = "0.59.0";
 const REFRESH_INTERVAL_SECONDS: u64 = 60;
 const COST_REFRESH_INTERVAL_SECONDS: u64 = 10 * 60;
 const MACOS_TRAY_ITEM_WIDTH: f64 = 50.0;
-const MACOS_TRAY_AUTOSAVE_NAME: &str = "com.godju.ssalmeok.usage-tray";
+const MACOS_TRAY_AUTOSAVE_NAME: &str = "usage-tray";
 const MACOS_TRAY_INITIAL_POSITION: isize = 650;
 const STALE_AFTER_SECONDS: u64 = 180;
 const RESET_CONFIRMATION: &str = "RESET_ONE_CREDIT";
@@ -1478,6 +1478,22 @@ fn toggle_main_window(app: &AppHandle) {
 }
 
 fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        let position_key = NSString::from_str(&format!(
+            "NSStatusItem Preferred Position {MACOS_TRAY_AUTOSAVE_NAME}"
+        ));
+        let visibility_key =
+            NSString::from_str(&format!("NSStatusItem Visible {MACOS_TRAY_AUTOSAVE_NAME}"));
+        let defaults = NSUserDefaults::standardUserDefaults();
+        if defaults.objectForKey(&position_key).is_none() {
+            defaults.setInteger_forKey(MACOS_TRAY_INITIAL_POSITION, &position_key);
+        }
+        if defaults.objectForKey(&visibility_key).is_none() {
+            defaults.setBool_forKey(true, &visibility_key);
+        }
+    }
+
     let menu = build_combined_tray_menu(app.handle(), None)?;
     let tray = TrayIconBuilder::with_id("usage-tray")
         .icon(tauri::include_image!("./icons/tray-codex.png"))
@@ -1501,20 +1517,6 @@ fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     tray.with_inner_tray_icon(|inner| {
         if let Some(status_item) = inner.ns_status_item() {
-            let autosave_name = NSString::from_str(MACOS_TRAY_AUTOSAVE_NAME);
-            let position_key = NSString::from_str(&format!(
-                "NSStatusItem Preferred Position {MACOS_TRAY_AUTOSAVE_NAME}"
-            ));
-            let visibility_key =
-                NSString::from_str(&format!("NSStatusItem Visible {MACOS_TRAY_AUTOSAVE_NAME}"));
-            let defaults = NSUserDefaults::standardUserDefaults();
-            if defaults.objectForKey(&position_key).is_none() {
-                defaults.setInteger_forKey(MACOS_TRAY_INITIAL_POSITION, &position_key);
-            }
-            if defaults.objectForKey(&visibility_key).is_none() {
-                defaults.setBool_forKey(true, &visibility_key);
-            }
-            status_item.setAutosaveName(Some(&autosave_name));
             status_item.setLength(MACOS_TRAY_ITEM_WIDTH);
         }
     })?;
@@ -1531,19 +1533,6 @@ fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
         _ => {}
     });
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn restore_native_tray_position(app: &AppHandle) {
-    if let Some(tray) = app.tray_by_id("usage-tray") {
-        let _ = tray.with_inner_tray_icon(|inner| {
-            if let Some(status_item) = inner.ns_status_item() {
-                status_item.setVisible(false);
-                status_item.setVisible(true);
-                status_item.setLength(MACOS_TRAY_ITEM_WIDTH);
-            }
-        });
-    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1606,15 +1595,13 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("쌀먹을 실행하지 못했습니다.")
-        .run(|app, event| match event {
-            #[cfg(target_os = "macos")]
-            tauri::RunEvent::Ready => restore_native_tray_position(app),
-            tauri::RunEvent::ExitRequested {
+        .run(|_, event| {
+            if let tauri::RunEvent::ExitRequested {
                 code: None, api, ..
-            } => {
+            } = event
+            {
                 api.prevent_exit();
             }
-            _ => {}
         });
 }
 
