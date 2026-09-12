@@ -23,7 +23,7 @@ use uuid::Uuid;
 const CODEXBAR_VERSION: &str = "0.59.0";
 const REFRESH_INTERVAL_SECONDS: u64 = 60;
 const COST_REFRESH_INTERVAL_SECONDS: u64 = 10 * 60;
-const MACOS_TRAY_ITEM_WIDTH: f64 = 48.0;
+const MACOS_TRAY_ITEM_WIDTH: f64 = 50.0;
 const STALE_AFTER_SECONDS: u64 = 180;
 const RESET_CONFIRMATION: &str = "RESET_ONE_CREDIT";
 const EXCHANGE_RATE_CACHE_SECONDS: u64 = 6 * 60 * 60;
@@ -931,141 +931,141 @@ fn info_menu_item(
     MenuItemBuilder::with_id(id, text).enabled(false).build(app)
 }
 
-fn build_codex_tray_menu(
+fn build_combined_tray_menu(
     app: &AppHandle,
-    provider: Option<&ProviderSnapshot>,
-    exchange_rate: Option<&ExchangeRate>,
+    snapshot: Option<&AppSnapshot>,
 ) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    let weekly =
-        provider.and_then(|provider| preferred_window(provider, "codex-secondary", 10_080));
-    let header = info_menu_item(
+    let codex = snapshot.and_then(|snapshot| provider_by_id(snapshot, "codex"));
+    let claude = snapshot.and_then(|snapshot| provider_by_id(snapshot, "claude"));
+    let exchange_rate = snapshot.and_then(|snapshot| snapshot.exchange_rate.as_ref());
+    let codex_weekly =
+        codex.and_then(|provider| preferred_window(provider, "codex-secondary", 10_080));
+    let claude_five_hour =
+        claude.and_then(|provider| preferred_window(provider, "claude-primary", 300));
+    let claude_weekly =
+        claude.and_then(|provider| preferred_window(provider, "claude-secondary", 10_080));
+
+    let codex_header = info_menu_item(
         app,
         "codex-header",
-        provider
+        codex
             .and_then(min_remaining)
             .map(|remaining| format!("Codex  ·  {remaining:.0}% 남음"))
             .unwrap_or_else(|| "Codex  ·  읽는 중".to_string()),
     )?;
-    let weekly_item = info_menu_item(app, "codex-weekly", limit_menu_text("주간 한도", weekly))?;
-    let weekly_reset = info_menu_item(app, "codex-weekly-reset", reset_menu_text(weekly))?;
-    let tokens = info_menu_item(app, "codex-tokens", token_menu_text(provider))?;
-    let krw = info_menu_item(app, "codex-krw", krw_menu_text(provider, exchange_rate))?;
-    let reset_credits = info_menu_item(
+    let codex_weekly_item = info_menu_item(
+        app,
+        "codex-weekly",
+        limit_menu_text("주간 한도", codex_weekly),
+    )?;
+    let codex_weekly_reset =
+        info_menu_item(app, "codex-weekly-reset", reset_menu_text(codex_weekly))?;
+    let codex_tokens = info_menu_item(app, "codex-tokens", token_menu_text(codex))?;
+    let codex_krw = info_menu_item(app, "codex-krw", krw_menu_text(codex, exchange_rate))?;
+    let codex_reset_credits = info_menu_item(
         app,
         "codex-reset-credits",
-        provider
+        codex
             .and_then(|provider| provider.reset_credits.as_ref())
             .map(|credits| format!("리셋권  ·  {}장", credits.available_count))
             .unwrap_or_else(|| "리셋권  ·  확인 중".to_string()),
     )?;
 
-    MenuBuilder::with_id(app, "codex-context-menu")
-        .items(&[&header, &weekly_item, &weekly_reset])
-        .separator()
-        .items(&[&tokens, &krw, &reset_credits])
-        .separator()
-        .text("codex-open", "쌀먹 열기")
-        .text("codex-refresh", "지금 갱신")
-        .separator()
-        .text("codex-quit", "종료")
-        .build()
-}
-
-fn build_claude_tray_menu(
-    app: &AppHandle,
-    provider: Option<&ProviderSnapshot>,
-    exchange_rate: Option<&ExchangeRate>,
-) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    let five_hour = provider.and_then(|provider| preferred_window(provider, "claude-primary", 300));
-    let weekly =
-        provider.and_then(|provider| preferred_window(provider, "claude-secondary", 10_080));
-    let header = info_menu_item(
+    let claude_header = info_menu_item(
         app,
         "claude-header",
-        provider
+        claude
             .and_then(min_remaining)
             .map(|remaining| format!("Claude  ·  {remaining:.0}% 남음"))
             .unwrap_or_else(|| "Claude  ·  읽는 중".to_string()),
     )?;
-    let five_hour_item = info_menu_item(
+    let claude_five_hour_item = info_menu_item(
         app,
         "claude-five-hour",
-        limit_menu_text("5시간 한도", five_hour),
+        limit_menu_text("5시간 한도", claude_five_hour),
     )?;
-    let five_hour_reset =
-        info_menu_item(app, "claude-five-hour-reset", reset_menu_text(five_hour))?;
-    let weekly_item = info_menu_item(app, "claude-weekly", limit_menu_text("주간 한도", weekly))?;
-    let weekly_reset = info_menu_item(app, "claude-weekly-reset", reset_menu_text(weekly))?;
-    let tokens = info_menu_item(app, "claude-tokens", token_menu_text(provider))?;
-    let krw = info_menu_item(app, "claude-krw", krw_menu_text(provider, exchange_rate))?;
-    let disclaimer = info_menu_item(
+    let claude_five_hour_reset = info_menu_item(
         app,
-        "claude-cost-note",
+        "claude-five-hour-reset",
+        reset_menu_text(claude_five_hour),
+    )?;
+    let claude_weekly_item = info_menu_item(
+        app,
+        "claude-weekly",
+        limit_menu_text("주간 한도", claude_weekly),
+    )?;
+    let claude_weekly_reset =
+        info_menu_item(app, "claude-weekly-reset", reset_menu_text(claude_weekly))?;
+    let claude_tokens = info_menu_item(app, "claude-tokens", token_menu_text(claude))?;
+    let claude_krw = info_menu_item(app, "claude-krw", krw_menu_text(claude, exchange_rate))?;
+    let cost_note = info_menu_item(
+        app,
+        "cost-note",
         "※ 실제 청구액이 아닌 개발자용 정가 환산".to_string(),
     )?;
 
-    MenuBuilder::with_id(app, "claude-context-menu")
+    MenuBuilder::with_id(app, "usage-context-menu")
         .items(&[
-            &header,
-            &five_hour_item,
-            &five_hour_reset,
-            &weekly_item,
-            &weekly_reset,
+            &codex_header,
+            &codex_weekly_item,
+            &codex_weekly_reset,
+            &codex_tokens,
+            &codex_krw,
+            &codex_reset_credits,
         ])
         .separator()
-        .items(&[&tokens, &krw, &disclaimer])
+        .items(&[
+            &claude_header,
+            &claude_five_hour_item,
+            &claude_five_hour_reset,
+            &claude_weekly_item,
+            &claude_weekly_reset,
+            &claude_tokens,
+            &claude_krw,
+            &cost_note,
+        ])
         .separator()
-        .text("claude-open", "쌀먹 열기")
-        .text("claude-refresh", "지금 갱신")
+        .text("usage-open", "쌀먹 열기")
+        .text("usage-refresh", "지금 갱신")
         .separator()
-        .text("claude-quit", "종료")
+        .text("usage-quit", "종료")
         .build()
 }
 
-fn build_provider_tray_menu(
-    app: &AppHandle,
-    provider_id: &str,
-    provider: Option<&ProviderSnapshot>,
-    exchange_rate: Option<&ExchangeRate>,
-) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    match provider_id {
-        "codex" => build_codex_tray_menu(app, provider, exchange_rate),
-        "claude" => build_claude_tray_menu(app, provider, exchange_rate),
-        _ => MenuBuilder::new(app)
-            .text("unknown-open", "쌀먹 열기")
-            .build(),
-    }
+fn most_constrained_provider(snapshot: &AppSnapshot) -> Option<&ProviderSnapshot> {
+    snapshot
+        .providers
+        .iter()
+        .filter_map(|provider| min_remaining(provider).map(|remaining| (provider, remaining)))
+        .min_by(|left, right| left.1.total_cmp(&right.1))
+        .map(|(provider, _)| provider)
 }
 
 fn update_trays(app: &AppHandle, snapshot: &AppSnapshot) {
-    for (tray_id, provider_id) in [("codex-tray", "codex"), ("claude-tray", "claude")] {
-        let provider = snapshot
-            .providers
-            .iter()
-            .find(|provider| provider.id == provider_id);
-        if let Some(tray) = app.tray_by_id(tray_id) {
-            let title = tray_title(provider);
-            let tooltip = provider
-                .and_then(min_remaining)
-                .map(|remaining| {
-                    format!(
-                        "{} 남은 사용량 {:.0}%",
-                        provider_name(provider_id),
-                        remaining
-                    )
-                })
-                .unwrap_or_else(|| format!("{} 남은 사용량을 읽는 중", provider_name(provider_id)));
-            let _ = tray.set_title(Some(title));
-            let _ = tray.set_tooltip(Some(tooltip));
-            if let Ok(menu) = build_provider_tray_menu(
-                app,
-                provider_id,
-                provider,
-                snapshot.exchange_rate.as_ref(),
-            ) {
-                let _ = tray.set_menu(Some(menu));
-            }
+    let Some(tray) = app.tray_by_id("usage-tray") else {
+        return;
+    };
+    let selected = most_constrained_provider(snapshot);
+    let icon = if selected.is_some_and(|provider| provider.id == "claude") {
+        tauri::include_image!("./icons/tray-claude.png")
+    } else {
+        tauri::include_image!("./icons/tray-codex.png")
+    };
+    let tooltip = match (
+        provider_by_id(snapshot, "codex").and_then(min_remaining),
+        provider_by_id(snapshot, "claude").and_then(min_remaining),
+    ) {
+        (Some(codex), Some(claude)) => {
+            format!("Codex {codex:.0}% · Claude {claude:.0}% 남음")
         }
+        _ => "Codex · Claude 남은 사용량을 읽는 중".to_string(),
+    };
+
+    let _ = tray.set_icon_with_as_template(Some(icon), false);
+    let _ = tray.set_title(Some(tray_title(selected)));
+    let _ = tray.set_tooltip(Some(tooltip));
+    if let Ok(menu) = build_combined_tray_menu(app, Some(snapshot)) {
+        let _ = tray.set_menu(Some(menu));
     }
 }
 
@@ -1473,52 +1473,43 @@ fn toggle_main_window(app: &AppHandle) {
 }
 
 fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
-    for (tray_id, provider_id, tooltip) in [
-        ("codex-tray", "codex", "Codex 남은 사용량을 읽는 중"),
-        ("claude-tray", "claude", "Claude 남은 사용량을 읽는 중"),
-    ] {
-        let icon = if tray_id == "codex-tray" {
-            tauri::include_image!("./icons/tray-codex.png")
-        } else {
-            tauri::include_image!("./icons/tray-claude.png")
-        };
-        let menu = build_provider_tray_menu(app.handle(), provider_id, None, None)?;
-        let tray = TrayIconBuilder::with_id(tray_id)
-            .icon(icon)
-            .icon_as_template(false)
-            .title("--")
-            .tooltip(tooltip)
-            .menu(&menu)
-            .show_menu_on_left_click(false)
-            .on_tray_icon_event(|tray, event| {
-                if let TrayIconEvent::Click {
-                    button: MouseButton::Left,
-                    button_state: MouseButtonState::Up,
-                    ..
-                } = event
-                {
-                    toggle_main_window(tray.app_handle());
-                }
-            })
-            .build(app)?;
-
-        #[cfg(target_os = "macos")]
-        tray.with_inner_tray_icon(|inner| {
-            if let Some(status_item) = inner.ns_status_item() {
-                status_item.setLength(MACOS_TRAY_ITEM_WIDTH);
-                status_item.setVisible(true);
+    let menu = build_combined_tray_menu(app.handle(), None)?;
+    let tray = TrayIconBuilder::with_id("usage-tray")
+        .icon(tauri::include_image!("./icons/tray-codex.png"))
+        .icon_as_template(false)
+        .title("--")
+        .tooltip("Codex · Claude 남은 사용량을 읽는 중")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                toggle_main_window(tray.app_handle());
             }
-        })?;
-    }
+        })
+        .build(app)?;
+
+    #[cfg(target_os = "macos")]
+    tray.with_inner_tray_icon(|inner| {
+        if let Some(status_item) = inner.ns_status_item() {
+            status_item.setLength(MACOS_TRAY_ITEM_WIDTH);
+            status_item.setVisible(true);
+        }
+    })?;
+
     app.on_menu_event(|app, event| match event.id().as_ref() {
-        "codex-open" | "claude-open" => show_main_window(app),
-        "codex-refresh" | "claude-refresh" => {
+        "usage-open" => show_main_window(app),
+        "usage-refresh" => {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 let _ = refresh_snapshot_internal(&app, true).await;
             });
         }
-        "codex-quit" | "claude-quit" => app.exit(0),
+        "usage-quit" => app.exit(0),
         _ => {}
     });
     Ok(())
@@ -1669,6 +1660,32 @@ mod tests {
             },
         ];
         assert_eq!(tray_title(Some(&provider)), "31");
+    }
+
+    #[test]
+    fn tray_selects_the_provider_with_least_remaining_usage() {
+        let mut codex = ProviderSnapshot::empty("codex");
+        codex.windows = vec![UsageWindow {
+            id: "codex-weekly".into(),
+            label: "주간".into(),
+            used_percent: 25.0,
+            remaining_percent: 75.0,
+            resets_at: None,
+            window_minutes: Some(10_080),
+        }];
+        let mut claude = ProviderSnapshot::empty("claude");
+        claude.windows = vec![UsageWindow {
+            id: "claude-five-hour".into(),
+            label: "5시간".into(),
+            used_percent: 70.0,
+            remaining_percent: 30.0,
+            resets_at: None,
+            window_minutes: Some(300),
+        }];
+        let mut snapshot = AppSnapshot::default();
+        snapshot.providers = vec![codex, claude];
+
+        assert_eq!(most_constrained_provider(&snapshot).unwrap().id, "claude");
     }
 
     #[test]
