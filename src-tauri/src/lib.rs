@@ -9,11 +9,7 @@ use std::{
     sync::Mutex,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri::{
-    AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
-    menu::{MenuBuilder, MenuItemBuilder},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_shell::ShellExt;
@@ -21,14 +17,11 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufR
 use uuid::Uuid;
 
 #[cfg(target_os = "macos")]
-use objc2_foundation::{NSString, NSUserDefaults};
+mod native_tray;
 
 const CODEXBAR_VERSION: &str = "0.59.0";
 const REFRESH_INTERVAL_SECONDS: u64 = 60;
 const COST_REFRESH_INTERVAL_SECONDS: u64 = 10 * 60;
-const MACOS_TRAY_ITEM_WIDTH: f64 = 24.0;
-const MACOS_TRAY_AUTOSAVE_NAME: &str = "usage-tray";
-const MACOS_TRAY_INITIAL_POSITION: isize = 500;
 const STALE_AFTER_SECONDS: u64 = 180;
 const RESET_CONFIRMATION: &str = "RESET_ONE_CREDIT";
 const EXCHANGE_RATE_CACHE_SECONDS: u64 = 6 * 60 * 60;
@@ -888,13 +881,6 @@ fn limit_menu_text(label: &str, window: Option<&UsageWindow>) -> String {
         .unwrap_or_else(|| format!("{label}  ·  확인 불가"))
 }
 
-fn reset_menu_text(window: Option<&UsageWindow>) -> String {
-    format!(
-        "초기화까지  ·  {}",
-        format_reset_countdown(window.and_then(|window| window.resets_at.as_deref()))
-    )
-}
-
 fn token_menu_text(provider: Option<&ProviderSnapshot>) -> String {
     provider
         .and_then(|provider| provider.cost.as_ref())
@@ -921,115 +907,6 @@ fn krw_menu_text(
     }
 }
 
-fn info_menu_item(
-    app: &AppHandle,
-    id: &str,
-    text: String,
-) -> tauri::Result<tauri::menu::MenuItem<tauri::Wry>> {
-    MenuItemBuilder::with_id(id, text).enabled(false).build(app)
-}
-
-fn build_combined_tray_menu(
-    app: &AppHandle,
-    snapshot: Option<&AppSnapshot>,
-) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    let codex = snapshot.and_then(|snapshot| provider_by_id(snapshot, "codex"));
-    let claude = snapshot.and_then(|snapshot| provider_by_id(snapshot, "claude"));
-    let exchange_rate = snapshot.and_then(|snapshot| snapshot.exchange_rate.as_ref());
-    let codex_weekly =
-        codex.and_then(|provider| preferred_window(provider, "codex-secondary", 10_080));
-    let claude_five_hour =
-        claude.and_then(|provider| preferred_window(provider, "claude-primary", 300));
-    let claude_weekly =
-        claude.and_then(|provider| preferred_window(provider, "claude-secondary", 10_080));
-
-    let codex_header = info_menu_item(
-        app,
-        "codex-header",
-        codex
-            .and_then(min_remaining)
-            .map(|remaining| format!("Codex  ·  {remaining:.0}% 남음"))
-            .unwrap_or_else(|| "Codex  ·  읽는 중".to_string()),
-    )?;
-    let codex_weekly_item = info_menu_item(
-        app,
-        "codex-weekly",
-        limit_menu_text("주간 한도", codex_weekly),
-    )?;
-    let codex_weekly_reset =
-        info_menu_item(app, "codex-weekly-reset", reset_menu_text(codex_weekly))?;
-    let codex_tokens = info_menu_item(app, "codex-tokens", token_menu_text(codex))?;
-    let codex_krw = info_menu_item(app, "codex-krw", krw_menu_text(codex, exchange_rate))?;
-    let codex_reset_credits = info_menu_item(
-        app,
-        "codex-reset-credits",
-        codex
-            .and_then(|provider| provider.reset_credits.as_ref())
-            .map(|credits| format!("리셋권  ·  {}장", credits.available_count))
-            .unwrap_or_else(|| "리셋권  ·  확인 중".to_string()),
-    )?;
-
-    let claude_header = info_menu_item(
-        app,
-        "claude-header",
-        claude
-            .and_then(min_remaining)
-            .map(|remaining| format!("Claude  ·  {remaining:.0}% 남음"))
-            .unwrap_or_else(|| "Claude  ·  읽는 중".to_string()),
-    )?;
-    let claude_five_hour_item = info_menu_item(
-        app,
-        "claude-five-hour",
-        limit_menu_text("5시간 한도", claude_five_hour),
-    )?;
-    let claude_five_hour_reset = info_menu_item(
-        app,
-        "claude-five-hour-reset",
-        reset_menu_text(claude_five_hour),
-    )?;
-    let claude_weekly_item = info_menu_item(
-        app,
-        "claude-weekly",
-        limit_menu_text("주간 한도", claude_weekly),
-    )?;
-    let claude_weekly_reset =
-        info_menu_item(app, "claude-weekly-reset", reset_menu_text(claude_weekly))?;
-    let claude_tokens = info_menu_item(app, "claude-tokens", token_menu_text(claude))?;
-    let claude_krw = info_menu_item(app, "claude-krw", krw_menu_text(claude, exchange_rate))?;
-    let cost_note = info_menu_item(
-        app,
-        "cost-note",
-        "※ 실제 청구액이 아닌 개발자용 정가 환산".to_string(),
-    )?;
-
-    MenuBuilder::with_id(app, "usage-context-menu")
-        .items(&[
-            &codex_header,
-            &codex_weekly_item,
-            &codex_weekly_reset,
-            &codex_tokens,
-            &codex_krw,
-            &codex_reset_credits,
-        ])
-        .separator()
-        .items(&[
-            &claude_header,
-            &claude_five_hour_item,
-            &claude_five_hour_reset,
-            &claude_weekly_item,
-            &claude_weekly_reset,
-            &claude_tokens,
-            &claude_krw,
-            &cost_note,
-        ])
-        .separator()
-        .text("usage-open", "쌀먹 열기")
-        .text("usage-refresh", "지금 갱신")
-        .separator()
-        .text("usage-quit", "종료")
-        .build()
-}
-
 fn most_constrained_provider(snapshot: &AppSnapshot) -> Option<&ProviderSnapshot> {
     snapshot
         .providers
@@ -1039,32 +916,14 @@ fn most_constrained_provider(snapshot: &AppSnapshot) -> Option<&ProviderSnapshot
         .map(|(provider, _)| provider)
 }
 
+#[cfg(target_os = "macos")]
 fn update_trays(app: &AppHandle, snapshot: &AppSnapshot) {
-    let Some(tray) = app.tray_by_id("usage-tray") else {
-        return;
-    };
-    let selected = most_constrained_provider(snapshot);
-    let icon = if selected.is_some_and(|provider| provider.id == "claude") {
-        tauri::include_image!("./icons/tray-claude.png")
-    } else {
-        tauri::include_image!("./icons/tray-codex.png")
-    };
-    let tooltip = match (
-        provider_by_id(snapshot, "codex").and_then(min_remaining),
-        provider_by_id(snapshot, "claude").and_then(min_remaining),
-    ) {
-        (Some(codex), Some(claude)) => {
-            format!("Codex {codex:.0}% · Claude {claude:.0}% 남음")
-        }
-        _ => "Codex · Claude 남은 사용량을 읽는 중".to_string(),
-    };
-
-    let _ = tray.set_icon_with_as_template(Some(icon), false);
-    let _ = tray.set_tooltip(Some(tooltip));
-    if let Ok(menu) = build_combined_tray_menu(app, Some(snapshot)) {
-        let _ = tray.set_menu(Some(menu));
-    }
+    let snapshot = snapshot.clone();
+    let _ = app.run_on_main_thread(move || native_tray::update(&snapshot));
 }
+
+#[cfg(not(target_os = "macos"))]
+fn update_trays(_app: &AppHandle, _snapshot: &AppSnapshot) {}
 
 fn provider_by_id<'a>(snapshot: &'a AppSnapshot, id: &str) -> Option<&'a ProviderSnapshot> {
     snapshot.providers.iter().find(|provider| provider.id == id)
@@ -1469,76 +1328,6 @@ fn toggle_main_window(app: &AppHandle) {
     }
 }
 
-fn create_trays(app: &mut tauri::App) -> tauri::Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        let position_key = NSString::from_str(&format!(
-            "NSStatusItem Preferred Position {MACOS_TRAY_AUTOSAVE_NAME}"
-        ));
-        let visibility_key =
-            NSString::from_str(&format!("NSStatusItem Visible {MACOS_TRAY_AUTOSAVE_NAME}"));
-        let defaults = NSUserDefaults::standardUserDefaults();
-        if defaults.objectForKey(&position_key).is_none() {
-            defaults.setInteger_forKey(MACOS_TRAY_INITIAL_POSITION, &position_key);
-        }
-        if defaults.objectForKey(&visibility_key).is_none() {
-            defaults.setBool_forKey(true, &visibility_key);
-        }
-    }
-
-    let menu = build_combined_tray_menu(app.handle(), None)?;
-    let tray = TrayIconBuilder::with_id("usage-tray")
-        .icon(tauri::include_image!("./icons/tray-codex.png"))
-        .icon_as_template(false)
-        .tooltip("Codex · Claude 남은 사용량을 읽는 중")
-        .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                toggle_main_window(tray.app_handle());
-            }
-        })
-        .build(app)?;
-
-    #[cfg(target_os = "macos")]
-    tray.with_inner_tray_icon(|inner| {
-        if let Some(status_item) = inner.ns_status_item() {
-            status_item.setLength(MACOS_TRAY_ITEM_WIDTH);
-        }
-    })?;
-
-    app.on_menu_event(|app, event| match event.id().as_ref() {
-        "usage-open" => show_main_window(app),
-        "usage-refresh" => {
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = refresh_snapshot_internal(&app, true).await;
-            });
-        }
-        "usage-quit" => app.exit(0),
-        _ => {}
-    });
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn restore_native_tray_position(app: &AppHandle) {
-    if let Some(tray) = app.tray_by_id("usage-tray") {
-        let _ = tray.with_inner_tray_icon(|inner| {
-            if let Some(status_item) = inner.ns_status_item() {
-                status_item.setVisible(false);
-                status_item.setVisible(true);
-                status_item.setLength(MACOS_TRAY_ITEM_WIDTH);
-            }
-        });
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1564,10 +1353,9 @@ pub fn run() {
                 let _ = app.autolaunch().enable();
             }
 
-            create_trays(app)?;
-            if let Some(cached) = cached_snapshot.as_ref() {
-                update_trays(app.handle(), cached);
-            }
+            #[cfg(target_os = "macos")]
+            native_tray::create(app.handle().clone(), cached_snapshot.as_ref())
+                .map_err(std::io::Error::other)?;
             let launched_hidden = env::args().any(|argument| argument == "--hidden");
             if !launched_hidden {
                 show_main_window(app.handle());
@@ -1599,15 +1387,13 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("쌀먹을 실행하지 못했습니다.")
-        .run(|app, event| match event {
-            #[cfg(target_os = "macos")]
-            tauri::RunEvent::Ready => restore_native_tray_position(app),
-            tauri::RunEvent::ExitRequested {
+        .run(|_app, event| {
+            if let tauri::RunEvent::ExitRequested {
                 code: None, api, ..
-            } => {
+            } = event
+            {
                 api.prevent_exit();
             }
-            _ => {}
         });
 }
 
