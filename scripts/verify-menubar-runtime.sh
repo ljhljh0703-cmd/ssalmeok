@@ -9,12 +9,15 @@ PROOF_IMAGE="$EVIDENCE_DIR/status-item.png"
 RECEIPT="$EVIDENCE_DIR/receipt.txt"
 
 fail() {
+  if [ -d "$EVIDENCE_DIR" ]; then
+    printf 'checked_at=%s\nreason=%s\n' "$(date -Iseconds)" "$1" > "$EVIDENCE_DIR/failure.txt"
+  fi
   echo "메뉴 막대 화면 검사 실패: $1" >&2
   exit 1
 }
 
-test -d "$APP_PATH" || fail "앱을 찾을 수 없습니다: $APP_PATH"
 mkdir -p "$EVIDENCE_DIR"
+test -d "$APP_PATH" || fail "앱을 찾을 수 없습니다: $APP_PATH"
 
 RUNNING_PIDS="$(pgrep -x ssalmeok || true)"
 RUNNING_HELPERS="$(pgrep -f '(^|/)ssalmeok-menubar([ -]|$)' || true)"
@@ -31,7 +34,7 @@ LAST_TRAY_RECORD="없음"
 LAST_VISIBLE_FRAME=""
 STABLE_VISIBLE_READS=0
 for _ in $(seq 1 20); do
-  TRAY_RECORD="$(osascript \
+  if ! TRAY_RECORD="$(osascript \
     -e 'tell application "System Events"' \
     -e 'set helperProcesses to every process whose name starts with "ssalmeok-menubar"' \
     -e 'if (count helperProcesses) is not 1 then return ""' \
@@ -53,7 +56,13 @@ for _ in $(seq 1 20); do
     -e 'end repeat' \
     -e 'return trayRecords' \
     -e 'end tell' \
-    -e 'end tell' 2>/dev/null || true)"
+    -e 'end tell' 2>"$EVIDENCE_DIR/probe-error.txt")"; then
+    fail "검사 도구 오류: $(cat "$EVIDENCE_DIR/probe-error.txt"). 앱 표시 실패로 판정하지 않습니다."
+  fi
+  printf '%s\n' "$TRAY_RECORD" > "$EVIDENCE_DIR/last-query.txt"
+  if [ -n "$TRAY_RECORD" ]; then
+    LAST_TRAY_RECORD="$TRAY_RECORD"
+  fi
   VALID_FRAME=1
   ITEM_X=$SCREEN_RIGHT
   ITEM_Y=40
@@ -95,7 +104,7 @@ for _ in $(seq 1 20); do
 done
 
 if (( STABLE_VISIBLE_READS < 2 )); then
-  fail "20초 안에 화면 상단의 안정된 메뉴 막대 항목을 찾지 못했습니다. 마지막 관측: $LAST_TRAY_RECORD"
+  fail "20회 조회에서 화면 상단의 안정된 두 메뉴 항목을 찾지 못했습니다. 마지막 관측: $LAST_TRAY_RECORD"
 fi
 pgrep -x ssalmeok >/dev/null || fail "메뉴 막대는 보이지만 Tauri 본체가 실행 중이지 않습니다."
 

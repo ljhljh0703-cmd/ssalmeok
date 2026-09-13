@@ -97,3 +97,7 @@ OpenAI 로고 사용은 [OpenAI 브랜드 지침](https://openai.com/brand/)을 
 ## License
 
 MIT
+
+## 메뉴 막대 수정 전 확인
+
+[사건 기록과 재발 대응](./docs/INCIDENT-2026-09-MENUBAR-VISIBILITY.md)의 현행 기준·정상 보존본을 먼저 확인합니다. Codex 주간/Claude 5시간 동시 표시를 임의로 단일 대표값으로 바꾸지 않습니다. `pnpm verify`는 검사기의 네 가지 실패 경로도 확인하지만, 설치본의 실제 화면은 `pnpm verify:menubar`로 별도 검증해야 합니다. 조회 오류를 앱 결함으로 오진하거나 개발 실행/CI 성공을 설치본 화면 성공으로 옮겨 적지 않습니다.

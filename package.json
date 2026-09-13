@@ -9,13 +9,14 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "verify": "pnpm helper:build && pnpm verify:tray-architecture && pnpm test && pnpm build && cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
+    "verify": "pnpm test:menubar-verifier && pnpm helper:build && pnpm verify:tray-architecture && pnpm test && pnpm build && cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
     "verify:tray-architecture": "bash scripts/check-native-tray-boundary.sh",
     "verify:menubar": "bash scripts/verify-menubar-runtime.sh",
     "package:mac": "bash scripts/package-mac.sh",
     "helper:build": "bash scripts/build-menubar-helper.sh",
     "sidecar:ensure": "bash scripts/fetch-codexbar-sidecar.sh",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:menubar-verifier": "python3 scripts/test-menubar-verifier.py"
   },
   "dependencies": {
     "@tauri-apps/plugin-autostart": "^2",
