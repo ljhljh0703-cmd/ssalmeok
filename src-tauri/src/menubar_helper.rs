@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -29,12 +30,13 @@ pub(super) fn start(app: &AppHandle, snapshot: &AppSnapshot) -> Result<(), Strin
         .menubar_child
         .lock()
         .map_err(|_| "메뉴 막대 도우미 상태를 열지 못했습니다.".to_string())?;
-    if child_slot.is_some() {
+    if state.menubar_stopping.load(Ordering::SeqCst) || child_slot.is_some() {
         return Ok(());
     }
 
     let codex_icon = resolve_icon(app, "tray-codex.png")?;
     let claude_icon = resolve_icon(app, "tray-claude.png")?;
+    let line = payload_line(snapshot)?;
     let (mut events, mut child) = app
         .shell()
         .sidecar("ssalmeok-menubar")
@@ -46,11 +48,11 @@ pub(super) fn start(app: &AppHandle, snapshot: &AppSnapshot) -> Result<(), Strin
         .spawn()
         .map_err(|_| "AppKit 메뉴 막대 도우미를 실행하지 못했습니다.".to_string())?;
 
-    let line = payload_line(snapshot)?;
     if child.write(&line).is_err() {
         let _ = child.kill();
         return Err("메뉴 막대 도우미에 첫 상태를 보내지 못했습니다.".to_string());
     }
+    let child_pid = child.pid();
     *child_slot = Some(child);
     drop(child_slot);
 
@@ -73,22 +75,47 @@ pub(super) fn start(app: &AppHandle, snapshot: &AppSnapshot) -> Result<(), Strin
             }
         }
 
-        if let Ok(mut slot) = event_app.state::<RuntimeState>().menubar_child.lock() {
-            slot.take();
+        // An older event stream must never clear a replacement child.
+        if let Ok(mut slot) = event_app.state::<RuntimeState>().menubar_child.lock()
+            && slot.as_ref().is_some_and(|child| child.pid() == child_pid)
+            && let Some(child) = slot.take()
+        {
+            let _ = child.kill();
         }
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        let snapshot = event_app
-            .state::<RuntimeState>()
-            .snapshot
-            .lock()
-            .map(|snapshot| snapshot.clone())
-            .unwrap_or_default();
-        if let Err(error) = start(&event_app, &snapshot) {
-            eprintln!("failed to restart the menubar helper: {error}");
+        loop {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            if event_app
+                .state::<RuntimeState>()
+                .menubar_stopping
+                .load(Ordering::SeqCst)
+            {
+                break;
+            }
+            let snapshot = event_app
+                .state::<RuntimeState>()
+                .snapshot
+                .lock()
+                .map(|snapshot| snapshot.clone())
+                .unwrap_or_default();
+            match start(&event_app, &snapshot) {
+                Ok(()) => break,
+                Err(error) => eprintln!("failed to restart the menubar helper: {error}"),
+            }
         }
     });
 
     Ok(())
+}
+
+pub(super) fn stop(app: &AppHandle) {
+    let state = app.state::<RuntimeState>();
+    // Set this before taking the slot lock so a pending restart cannot resurrect it.
+    state.menubar_stopping.store(true, Ordering::SeqCst);
+    if let Ok(mut slot) = state.menubar_child.lock()
+        && let Some(child) = slot.take()
+    {
+        let _ = child.kill();
+    }
 }
 
 pub(super) fn update(app: &AppHandle, snapshot: &AppSnapshot) {
@@ -108,6 +135,9 @@ pub(super) fn update(app: &AppHandle, snapshot: &AppSnapshot) {
     if let Some(child) = child_slot.as_mut() {
         if child.write(&line).is_err() {
             eprintln!("failed to update the menubar helper");
+            if let Some(child) = child_slot.take() {
+                let _ = child.kill();
+            }
         }
         return;
     }
