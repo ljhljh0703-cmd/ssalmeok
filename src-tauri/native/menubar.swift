@@ -2,9 +2,10 @@ import AppKit
 import Foundation
 
 private struct TrayPayload: Decodable {
-    let icon: String
-    let title: String
-    let tooltip: String
+    let codexTitle: String
+    let claudeTitle: String
+    let codexTooltip: String
+    let claudeTooltip: String
     let codexLines: [String]
     let claudeLines: [String]
     let costNote: String
@@ -64,8 +65,8 @@ private final class TrayTarget: NSView {
 private final class MenubarController: NSObject, NSApplicationDelegate {
     private let codexIcon: NSImage?
     private let claudeIcon: NSImage?
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let target = TrayTarget(frame: .zero)
+    private let statusItems = (0..<2).map { _ in NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength) }
+    private let targets = (0..<2).map { _ in TrayTarget(frame: .zero) }
 
     init(codexIconPath: String, claudeIconPath: String) {
         codexIcon = MenubarController.loadIcon(at: codexIconPath)
@@ -75,25 +76,28 @@ private final class MenubarController: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
-        statusItem.isVisible = true
-
-        guard let button = statusItem.button else {
-            logError("macOS 메뉴 막대 버튼을 만들지 못했습니다.")
-            NSApplication.shared.terminate(nil)
-            return
+        for (index, statusItem) in statusItems.enumerated() {
+            statusItem.isVisible = true
+            guard let button = statusItem.button else {
+                logError("macOS 메뉴 막대 버튼을 만들지 못했습니다.")
+                NSApplication.shared.terminate(nil)
+                return
+            }
+            button.imagePosition = .imageLeft
+            button.image = index == 0 ? codexIcon : claudeIcon
+            let target = targets[index]
+            target.statusItem = statusItem
+            target.frame = button.bounds
+            target.autoresizingMask = [.width, .height]
+            button.addSubview(target)
         }
-
-        button.imagePosition = .imageLeft
-        target.statusItem = statusItem
-        target.frame = button.bounds
-        target.autoresizingMask = [.width, .height]
-        button.addSubview(target)
 
         apply(
             TrayPayload(
-                icon: "codex",
-                title: "…",
-                tooltip: "Codex · Claude 남은 사용량을 읽는 중",
+                codexTitle: "…",
+                claudeTitle: "…",
+                codexTooltip: "Codex 남은 사용량을 읽는 중",
+                claudeTooltip: "Claude 남은 사용량을 읽는 중",
                 codexLines: ["Codex  ·  읽는 중"],
                 claudeLines: ["Claude  ·  읽는 중"],
                 costNote: "※ 실제 청구액이 아닌 개발자용 정가 환산"
@@ -132,15 +136,17 @@ private final class MenubarController: NSObject, NSApplicationDelegate {
     }
 
     private func apply(_ payload: TrayPayload) {
-        guard let button = statusItem.button else { return }
-        button.image = payload.icon == "claude" ? claudeIcon : codexIcon
-        button.title = payload.title
-        button.toolTip = payload.tooltip
-        target.frame = button.bounds
-        target.menu = buildMenu(payload)
+        for (index, statusItem) in statusItems.enumerated() {
+            guard let button = statusItem.button else { continue }
+            button.title = index == 0 ? payload.codexTitle : payload.claudeTitle
+            button.toolTip = index == 0 ? payload.codexTooltip : payload.claudeTooltip
+            let target = targets[index]
+            target.frame = button.bounds
+            target.menu = buildMenu(payload, target: target)
+        }
     }
 
-    private func buildMenu(_ payload: TrayPayload) -> NSMenu {
+    private func buildMenu(_ payload: TrayPayload, target: TrayTarget) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -149,10 +155,10 @@ private final class MenubarController: NSObject, NSApplicationDelegate {
         addInfoLines(payload.claudeLines, to: menu)
         addInfo(payload.costNote, to: menu, indented: false)
         menu.addItem(.separator())
-        addAction("쌀먹 열기", selector: #selector(TrayTarget.openApp(_:)), to: menu)
-        addAction("지금 갱신", selector: #selector(TrayTarget.refreshUsage(_:)), to: menu)
+        addAction("쌀먹 열기", selector: #selector(TrayTarget.openApp(_:)), to: menu, target: target)
+        addAction("지금 갱신", selector: #selector(TrayTarget.refreshUsage(_:)), to: menu, target: target)
         menu.addItem(.separator())
-        addAction("종료", selector: #selector(TrayTarget.quitApp(_:)), to: menu)
+        addAction("종료", selector: #selector(TrayTarget.quitApp(_:)), to: menu, target: target)
         return menu
     }
 
@@ -169,7 +175,7 @@ private final class MenubarController: NSObject, NSApplicationDelegate {
         menu.addItem(item)
     }
 
-    private func addAction(_ title: String, selector: Selector, to menu: NSMenu) {
+    private func addAction(_ title: String, selector: Selector, to menu: NSMenu, target: TrayTarget) {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
         item.target = target
         item.isEnabled = true

@@ -917,15 +917,6 @@ fn krw_menu_text(
     }
 }
 
-fn most_constrained_provider(snapshot: &AppSnapshot) -> Option<&ProviderSnapshot> {
-    snapshot
-        .providers
-        .iter()
-        .filter_map(|provider| min_remaining(provider).map(|remaining| (provider, remaining)))
-        .min_by(|left, right| left.1.total_cmp(&right.1))
-        .map(|(provider, _)| provider)
-}
-
 #[cfg(target_os = "macos")]
 fn update_trays(app: &AppHandle, snapshot: &AppSnapshot) {
     menubar_helper::update(app, snapshot);
@@ -1501,34 +1492,6 @@ mod tests {
             },
         ];
         assert_eq!(min_remaining(&provider), Some(31.0));
-    }
-
-    #[test]
-    fn tray_selects_the_provider_with_least_remaining_usage() {
-        let mut codex = ProviderSnapshot::empty("codex");
-        codex.windows = vec![UsageWindow {
-            id: "codex-weekly".into(),
-            label: "주간".into(),
-            used_percent: 25.0,
-            remaining_percent: 75.0,
-            resets_at: None,
-            window_minutes: Some(10_080),
-        }];
-        let mut claude = ProviderSnapshot::empty("claude");
-        claude.windows = vec![UsageWindow {
-            id: "claude-five-hour".into(),
-            label: "5시간".into(),
-            used_percent: 70.0,
-            remaining_percent: 30.0,
-            resets_at: None,
-            window_minutes: Some(300),
-        }];
-        let snapshot = AppSnapshot {
-            providers: vec![codex, claude],
-            ..AppSnapshot::default()
-        };
-
-        assert_eq!(most_constrained_provider(&snapshot).unwrap().id, "claude");
     }
 
     #[test]

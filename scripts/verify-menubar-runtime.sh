@@ -44,31 +44,52 @@ for _ in $(seq 1 20); do
     -e 'set end of trayItems to candidateItem' \
     -e 'end repeat' \
     -e 'end repeat' \
-    -e 'if (count trayItems) is not 1 then return ""' \
-    -e 'set trayItem to item 1 of trayItems' \
+    -e 'if (count trayItems) is not 2 then return ""' \
+    -e 'set trayRecords to ""' \
+    -e 'repeat with trayItem in trayItems' \
     -e 'set {itemX, itemY} to position of trayItem' \
     -e 'set {itemWidth, itemHeight} to size of trayItem' \
-    -e 'return (name of trayItem as text) & "|" & itemX & "|" & itemY & "|" & itemWidth & "|" & itemHeight' \
+    -e 'set trayRecords to trayRecords & (name of trayItem as text) & "|" & itemX & "|" & itemY & "|" & itemWidth & "|" & itemHeight & linefeed' \
+    -e 'end repeat' \
+    -e 'return trayRecords' \
     -e 'end tell' \
     -e 'end tell' 2>/dev/null || true)"
-  if [ -n "$TRAY_RECORD" ]; then
-    LAST_TRAY_RECORD="$TRAY_RECORD"
-    IFS='|' read -r ITEM_NAME ITEM_X ITEM_Y ITEM_WIDTH ITEM_HEIGHT <<< "$TRAY_RECORD"
-    if [[ "$ITEM_X" =~ ^-?[0-9]+$ && "$ITEM_Y" =~ ^-?[0-9]+$ && "$ITEM_WIDTH" =~ ^[0-9]+$ && "$ITEM_HEIGHT" =~ ^[0-9]+$ ]] && (( ITEM_X >= SCREEN_LEFT && ITEM_Y >= SCREEN_TOP && ITEM_X + ITEM_WIDTH <= SCREEN_RIGHT && ITEM_Y + ITEM_HEIGHT <= 40 )); then
-      CURRENT_FRAME="$ITEM_X,$ITEM_Y,$ITEM_WIDTH,$ITEM_HEIGHT"
-      if [ "$CURRENT_FRAME" = "$LAST_VISIBLE_FRAME" ]; then
-        STABLE_VISIBLE_READS=$(( STABLE_VISIBLE_READS + 1 ))
-      else
-        LAST_VISIBLE_FRAME="$CURRENT_FRAME"
-        STABLE_VISIBLE_READS=1
-      fi
-      if (( STABLE_VISIBLE_READS >= 2 )); then
-        break
-      fi
+  VALID_FRAME=1
+  ITEM_X=$SCREEN_RIGHT
+  ITEM_Y=40
+  ITEM_RIGHT=0
+  ITEM_BOTTOM=0
+  ITEM_COUNT=0
+  ITEM_NAME="Codex + Claude"
+  while IFS='|' read -r NAME X Y WIDTH HEIGHT; do
+    [ -n "$NAME" ] || continue
+    ITEM_COUNT=$(( ITEM_COUNT + 1 ))
+    if [[ "$X" =~ ^[0-9]+$ && "$Y" =~ ^[0-9]+$ && "$WIDTH" =~ ^[0-9]+$ && "$HEIGHT" =~ ^[0-9]+$ ]] && (( WIDTH > 0 && HEIGHT > 0 && X >= SCREEN_LEFT && Y >= SCREEN_TOP && X + WIDTH <= SCREEN_RIGHT && Y + HEIGHT <= 40 )); then
+      if (( X < ITEM_X )); then ITEM_X=$X; fi
+      if (( Y < ITEM_Y )); then ITEM_Y=$Y; fi
+      if (( X + WIDTH > ITEM_RIGHT )); then ITEM_RIGHT=$(( X + WIDTH )); fi
+      if (( Y + HEIGHT > ITEM_BOTTOM )); then ITEM_BOTTOM=$(( Y + HEIGHT )); fi
     else
-      LAST_VISIBLE_FRAME=""
-      STABLE_VISIBLE_READS=0
+      VALID_FRAME=0
     fi
+  done <<< "$TRAY_RECORD"
+  if (( ITEM_COUNT == 2 && VALID_FRAME == 1 )); then
+    LAST_TRAY_RECORD="$TRAY_RECORD"
+    ITEM_WIDTH=$(( ITEM_RIGHT - ITEM_X ))
+    ITEM_HEIGHT=$(( ITEM_BOTTOM - ITEM_Y ))
+    CURRENT_FRAME="$TRAY_RECORD"
+    if [ "$CURRENT_FRAME" = "$LAST_VISIBLE_FRAME" ]; then
+      STABLE_VISIBLE_READS=$(( STABLE_VISIBLE_READS + 1 ))
+    else
+      LAST_VISIBLE_FRAME="$CURRENT_FRAME"
+      STABLE_VISIBLE_READS=1
+    fi
+    if (( STABLE_VISIBLE_READS >= 2 )); then
+      break
+    fi
+  else
+    LAST_VISIBLE_FRAME=""
+    STABLE_VISIBLE_READS=0
   fi
   sleep 1
 done
@@ -77,8 +98,6 @@ if (( STABLE_VISIBLE_READS < 2 )); then
   fail "20초 안에 화면 상단의 안정된 메뉴 막대 항목을 찾지 못했습니다. 마지막 관측: $LAST_TRAY_RECORD"
 fi
 pgrep -x ssalmeok >/dev/null || fail "메뉴 막대는 보이지만 Tauri 본체가 실행 중이지 않습니다."
-
-IFS='|' read -r ITEM_NAME ITEM_X ITEM_Y ITEM_WIDTH ITEM_HEIGHT <<< "$TRAY_RECORD"
 
 [[ "$ITEM_X" =~ ^-?[0-9]+$ ]] || fail "항목 x 좌표를 읽지 못했습니다: $ITEM_X"
 [[ "$ITEM_Y" =~ ^-?[0-9]+$ ]] || fail "항목 y 좌표를 읽지 못했습니다: $ITEM_Y"
@@ -103,6 +122,8 @@ IMAGE_SHA="$(shasum -a 256 "$PROOF_IMAGE" | awk '{print $1}')"
   echo "app_path=$APP_PATH"
   echo "main_process=ssalmeok"
   echo "menubar_process=ssalmeok-menubar"
+  echo "status_item_count=2"
+  echo "status_item_records=$TRAY_RECORD"
   echo "status_item_name=$ITEM_NAME"
   echo "status_item_frame=$ITEM_X,$ITEM_Y,$ITEM_WIDTH,$ITEM_HEIGHT"
   echo "screen_bounds=$SCREEN_BOUNDS"
@@ -124,7 +145,7 @@ if [ ! -t 0 ]; then
   exit 2
 fi
 
-read -r -p "이미지에 서비스 로고와 남은 숫자가 둘 다 선명하게 보입니까? [y/N] " PIXEL_CONFIRMATION
+read -r -p "이미지에 Codex와 Claude 로고 및 각각의 남은 비율이 모두 보입니까? [y/N] " PIXEL_CONFIRMATION
 if [ "$PIXEL_CONFIRMATION" != "y" ] && [ "$PIXEL_CONFIRMATION" != "Y" ]; then
   fail "직접 확인하는 픽셀 관문을 통과하지 못했습니다."
 fi

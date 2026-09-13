@@ -9,16 +9,17 @@ use tauri_plugin_shell::process::CommandEvent;
 
 use super::{
     AppSnapshot, RuntimeState, format_reset_countdown, krw_menu_text, limit_menu_text,
-    min_remaining, most_constrained_provider, preferred_window, provider_by_id,
-    refresh_snapshot_internal, show_main_window, toggle_main_window, token_menu_text,
+    preferred_window, provider_by_id, refresh_snapshot_internal, show_main_window,
+    toggle_main_window, token_menu_text,
 };
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TrayPayload {
-    icon: String,
-    title: String,
-    tooltip: String,
+    codex_title: String,
+    claude_title: String,
+    codex_tooltip: String,
+    claude_tooltip: String,
     codex_lines: Vec<String>,
     claude_lines: Vec<String>,
     cost_note: String,
@@ -196,26 +197,6 @@ fn payload_line(snapshot: &AppSnapshot) -> Result<Vec<u8>, String> {
 }
 
 fn build_payload(snapshot: &AppSnapshot) -> TrayPayload {
-    let selected = most_constrained_provider(snapshot);
-    let icon = if selected.is_some_and(|provider| provider.id == "claude") {
-        "claude"
-    } else {
-        "codex"
-    };
-    let title = selected
-        .and_then(min_remaining)
-        .map(|remaining| format!("{remaining:.0}"))
-        .unwrap_or_else(|| "…".to_string());
-    let tooltip = match (
-        provider_by_id(snapshot, "codex").and_then(min_remaining),
-        provider_by_id(snapshot, "claude").and_then(min_remaining),
-    ) {
-        (Some(codex), Some(claude)) => {
-            format!("Codex {codex:.0}% · Claude {claude:.0}% 남음")
-        }
-        _ => "Codex · Claude 남은 사용량을 읽는 중".to_string(),
-    };
-
     let codex = provider_by_id(snapshot, "codex");
     let claude = provider_by_id(snapshot, "claude");
     let exchange_rate = snapshot.exchange_rate.as_ref();
@@ -226,15 +207,27 @@ fn build_payload(snapshot: &AppSnapshot) -> TrayPayload {
     let claude_weekly =
         claude.and_then(|provider| preferred_window(provider, "claude-secondary", 10_080));
 
+    // Never substitute a scoped limit or another time window for the requested basis.
+    let codex_display = codex.and_then(|p| p.windows.iter().find(|w| w.id == "codex-secondary"));
+    let claude_display = claude.and_then(|p| p.windows.iter().find(|w| w.id == "claude-primary"));
+    let display_title = |window: Option<&super::UsageWindow>| {
+        window
+            .map(|w| format!("{:.0}%", w.remaining_percent))
+            .unwrap_or_else(|| "—".to_string())
+    };
+    let codex_title = display_title(codex_display);
+    let claude_title = display_title(claude_display);
     TrayPayload {
-        icon: icon.to_string(),
-        title,
-        tooltip,
+        codex_tooltip: format!("Codex 주간 한도 · {codex_title} 남음"),
+        claude_tooltip: if claude_display.is_some() {
+            format!("Claude 5시간 한도 · {claude_title} 남음")
+        } else {
+            "Claude 5시간 한도는 현재 계정에서 제공되지 않습니다".to_string()
+        },
+        codex_title,
+        claude_title,
         codex_lines: vec![
-            codex
-                .and_then(min_remaining)
-                .map(|remaining| format!("Codex  ·  {remaining:.0}% 남음"))
-                .unwrap_or_else(|| "Codex  ·  읽는 중".to_string()),
+            limit_menu_text("Codex 주간", codex_display),
             limit_menu_text("주간 한도", codex_weekly),
             format!(
                 "초기화까지  ·  {}",
@@ -248,10 +241,7 @@ fn build_payload(snapshot: &AppSnapshot) -> TrayPayload {
                 .unwrap_or_else(|| "리셋권  ·  확인 중".to_string()),
         ],
         claude_lines: vec![
-            claude
-                .and_then(min_remaining)
-                .map(|remaining| format!("Claude  ·  {remaining:.0}% 남음"))
-                .unwrap_or_else(|| "Claude  ·  읽는 중".to_string()),
+            limit_menu_text("Claude 5시간", claude_display),
             limit_menu_text("5시간 한도", claude_five_hour),
             format!(
                 "5시간 초기화까지  ·  {}",
@@ -284,14 +274,42 @@ mod tests {
         let payload: serde_json::Value =
             serde_json::from_slice(&line).expect("payload should be valid JSON");
         for key in [
-            "icon",
-            "title",
-            "tooltip",
+            "codexTitle",
+            "claudeTitle",
+            "codexTooltip",
+            "claudeTooltip",
             "codexLines",
             "claudeLines",
             "costNote",
         ] {
             assert!(payload.get(key).is_some(), "missing helper field: {key}");
         }
+    }
+    #[test]
+    fn requested_limits_do_not_switch_to_lower_scoped_or_shorter_windows() {
+        let mut snapshot = AppSnapshot::default();
+        let window = |id: &str, minutes, remaining| super::super::UsageWindow {
+            id: id.into(),
+            label: id.into(),
+            window_minutes: Some(minutes),
+            remaining_percent: remaining,
+            used_percent: 100.0 - remaining,
+            resets_at: None,
+        };
+        snapshot.providers[0].windows = vec![
+            window("codex-spark-weekly", 10_080, 1.0),
+            window("codex-secondary", 10_080, 67.0),
+        ];
+        snapshot.providers[1].windows = vec![
+            window("claude-primary", 300, 94.0),
+            window("claude-secondary", 10_080, 88.0),
+        ];
+        let payload = build_payload(&snapshot);
+        assert_eq!(payload.codex_title, "67%");
+        assert_eq!(payload.claude_title, "94%");
+        snapshot.providers[1].windows.remove(0);
+        assert_eq!(build_payload(&snapshot).claude_title, "—");
+        snapshot.providers[0].windows.remove(1);
+        assert_eq!(build_payload(&snapshot).codex_title, "—");
     }
 }
