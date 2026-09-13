@@ -13,11 +13,13 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_shell::ShellExt;
+#[cfg(target_os = "macos")]
+use tauri_plugin_shell::process::CommandChild;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, Lines};
 use uuid::Uuid;
 
 #[cfg(target_os = "macos")]
-mod native_tray;
+mod menubar_helper;
 
 const CODEXBAR_VERSION: &str = "0.59.0";
 const REFRESH_INTERVAL_SECONDS: u64 = 60;
@@ -165,6 +167,8 @@ struct ResetAttempt {
 struct RuntimeState {
     snapshot: Mutex<AppSnapshot>,
     refresh_guard: tokio::sync::Mutex<()>,
+    #[cfg(target_os = "macos")]
+    menubar_child: Mutex<Option<CommandChild>>,
 }
 
 impl RuntimeState {
@@ -172,6 +176,8 @@ impl RuntimeState {
         Self {
             snapshot: Mutex::new(AppSnapshot::default()),
             refresh_guard: tokio::sync::Mutex::new(()),
+            #[cfg(target_os = "macos")]
+            menubar_child: Mutex::new(None),
         }
     }
 }
@@ -918,8 +924,7 @@ fn most_constrained_provider(snapshot: &AppSnapshot) -> Option<&ProviderSnapshot
 
 #[cfg(target_os = "macos")]
 fn update_trays(app: &AppHandle, snapshot: &AppSnapshot) {
-    let snapshot = snapshot.clone();
-    let _ = app.run_on_main_thread(move || native_tray::update(&snapshot));
+    menubar_helper::update(app, snapshot);
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1354,8 +1359,17 @@ pub fn run() {
             }
 
             #[cfg(target_os = "macos")]
-            native_tray::create(app.handle().clone(), cached_snapshot.as_ref())
-                .map_err(std::io::Error::other)?;
+            {
+                let initial_snapshot = app
+                    .state::<RuntimeState>()
+                    .snapshot
+                    .lock()
+                    .map(|snapshot| snapshot.clone())
+                    .unwrap_or_default();
+                menubar_helper::start(app.handle(), &initial_snapshot)
+                    .map_err(std::io::Error::other)?;
+            }
+
             let launched_hidden = env::args().any(|argument| argument == "--hidden");
             if !launched_hidden {
                 show_main_window(app.handle());

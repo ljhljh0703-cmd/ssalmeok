@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.godju.ssalmeok",
   "build": {
-    "beforeDevCommand": "pnpm sidecar:ensure && pnpm dev",
+    "beforeDevCommand": "pnpm sidecar:ensure && pnpm helper:build && pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm sidecar:ensure && pnpm build",
+    "beforeBuildCommand": "pnpm sidecar:ensure && pnpm helper:build && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -18,8 +18,12 @@
   "bundle": {
     "active": true,
     "targets": ["app"],
-    "externalBin": ["binaries/codexbar"],
-    "resources": ["resources/*"],
+    "externalBin": ["binaries/codexbar", "binaries/ssalmeok-menubar"],
+    "resources": [
+      "resources/*",
+      "icons/tray-codex.png",
+      "icons/tray-claude.png"
+    ],
     "copyright": "Copyright © 2026 godju",
     "macOS": {
       "minimumSystemVersion": "14.0",

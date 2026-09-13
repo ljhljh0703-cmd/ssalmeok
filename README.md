@@ -27,7 +27,7 @@ Codex와 Claude의 사용 한도, 다음 초기화 시각, 로컬 토큰 비용�
 - Mac 로그인 때 창 없이 자동으로 시작합니다.
 - Dock에는 나타나지 않고 메뉴 막대의 사용량 항목 하나만 유지합니다.
 - 메뉴 막대 항목을 왼쪽 클릭하면 본창을 열거나 닫고, 오른쪽 클릭하면 상세 메뉴를 엽니다.
-- 본창을 닫으면 화면 렌더링을 해제하고 메뉴 막대 수집기만 남깁니다.
+- 본창을 닫으면 화면 렌더링을 해제하고 Tauri 수집기와 작은 AppKit 메뉴 막대 도우미만 남깁니다.
 - 한도는 1분마다 갱신하고, 무거운 토큰·비용 기록 스캔은 10분마다 실행합니다.
 - `지금 갱신`은 한도와 토큰·비용 기록을 모두 즉시 새로 읽습니다.
 - 자동 갱신은 로컬 조회 명령만 사용하므로 Codex·Claude 토큰을 소비하지 않습니다.
@@ -53,6 +53,7 @@ pnpm tauri dev
 ```
 
 `sidecar:ensure`는 고정된 CodexBar CLI 0.59.0 배포 파일을 내려받고 SHA-256을 검증합니다. 이미 올바른 파일이 있으면 네트워크를 사용하지 않습니다.
+`tauri dev`, `verify`, `package:mac`은 약 100KB인 Swift AppKit 메뉴 막대 도우미도 자동으로 빌드합니다.
 
 ## 검사와 빌드
 
@@ -61,9 +62,10 @@ pnpm verify
 pnpm package:mac
 ```
 
-`pnpm verify`는 일반 검사보다 먼저 AppKit 직접 메뉴 막대 경계가 유지되는지 확인합니다. 설치본의 실제 표시 여부는 다른 쌀먹을 종료한 뒤 `pnpm verify:menubar`로 확인합니다. 이 검사는 화면 안 좌표와 잘라낸 실제 픽셀을 함께 확인하며, 결과는 공개되지 않는 `.runtime-evidence/`에 남깁니다. 자세한 장애 분석과 재발 방지 기준은 [메뉴 막대 표시 사건 기록](./docs/INCIDENT-2026-09-MENUBAR-VISIBILITY.md)에 있습니다.
+`pnpm verify`는 일반 검사보다 먼저 Tauri 본체와 AppKit 메뉴 막대 도우미의 프로세스 경계가 유지되는지 확인합니다. 설치본의 실제 표시 여부는 다른 쌀먹을 종료한 뒤 `pnpm verify:menubar`로 확인합니다. 이 검사는 화면 안 좌표와 잘라낸 실제 픽셀을 함께 확인하며, 결과는 공개되지 않는 `.runtime-evidence/`에 남깁니다. 자세한 장애 분석과 재발 방지 기준은 [메뉴 막대 표시 사건 기록](./docs/INCIDENT-2026-09-MENUBAR-VISIBILITY.md)에 있습니다.
 
 완성된 앱은 `src-tauri/target/release/bundle/macos/쌀먹.app`에 생성됩니다.
+`CARGO_TARGET_DIR`를 지정하면 해당 폴더의 `release/bundle/macos/쌀먹.app`을 같은 절차로 패키징·서명합니다. 예: `CARGO_TARGET_DIR=/private/tmp/ssalmeok-native-target pnpm package:mac`. 기존 개발 캐시를 정리한 이 Mac에서는 이 임시 경로를 사용합니다.
 패키징할 때 로컬 조회 도구의 불필요한 기호를 제거한 뒤 앱 전체를 다시 서명해 설치 용량을 줄입니다.
 
 ## GitHub 자동 빌드

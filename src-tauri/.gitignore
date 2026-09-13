@@ -8,3 +8,4 @@
 
 # Downloaded, hash-verified build dependency. See scripts/fetch-codexbar-sidecar.sh.
 /binaries/codexbar-*
+/binaries/ssalmeok-menubar-*

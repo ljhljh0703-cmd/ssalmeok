@@ -9,10 +9,11 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "verify": "pnpm verify:tray-architecture && pnpm test && pnpm build && cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
+    "verify": "pnpm helper:build && pnpm verify:tray-architecture && pnpm test && pnpm build && cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings && cargo test --manifest-path src-tauri/Cargo.toml",
     "verify:tray-architecture": "bash scripts/check-native-tray-boundary.sh",
     "verify:menubar": "bash scripts/verify-menubar-runtime.sh",
-    "package:mac": "pnpm tauri build --bundles app && strip -x 'src-tauri/target/release/bundle/macos/쌀먹.app/Contents/MacOS/codexbar' && codesign --force --deep --sign - 'src-tauri/target/release/bundle/macos/쌀먹.app' && codesign --verify --deep --strict --verbose=2 'src-tauri/target/release/bundle/macos/쌀먹.app'",
+    "package:mac": "bash scripts/package-mac.sh",
+    "helper:build": "bash scripts/build-menubar-helper.sh",
     "sidecar:ensure": "bash scripts/fetch-codexbar-sidecar.sh",
     "tauri": "tauri"
   },
