@@ -169,6 +169,8 @@ struct RuntimeState {
     refresh_guard: tokio::sync::Mutex<()>,
     #[cfg(target_os = "macos")]
     menubar_child: Mutex<Option<CommandChild>>,
+    #[cfg(target_os = "macos")]
+    menubar_stopping: std::sync::atomic::AtomicBool,
 }
 
 impl RuntimeState {
@@ -178,6 +180,8 @@ impl RuntimeState {
             refresh_guard: tokio::sync::Mutex::new(()),
             #[cfg(target_os = "macos")]
             menubar_child: Mutex::new(None),
+            #[cfg(target_os = "macos")]
+            menubar_stopping: std::sync::atomic::AtomicBool::new(false),
         }
     }
 }
@@ -1354,8 +1358,12 @@ pub fn run() {
             {
                 *snapshot = cached.clone();
             }
-            if !app.autolaunch().is_enabled().unwrap_or(false) {
-                let _ = app.autolaunch().enable();
+            // is_enabled only checks whether the plist exists; it can still point
+            // at an obsolete test bundle. Only an installed app owns this entry.
+            if env::current_exe().is_ok_and(|path| path.starts_with("/Applications"))
+                && let Err(error) = app.autolaunch().enable()
+            {
+                eprintln!("failed to register the installed app for login: {error}");
             }
 
             #[cfg(target_os = "macos")]
@@ -1402,6 +1410,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("쌀먹을 실행하지 못했습니다.")
         .run(|_app, event| {
+            #[cfg(target_os = "macos")]
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { code: Some(_), .. } | tauri::RunEvent::Exit
+            ) {
+                menubar_helper::stop(_app);
+            }
             if let tauri::RunEvent::ExitRequested {
                 code: None, api, ..
             } = event
